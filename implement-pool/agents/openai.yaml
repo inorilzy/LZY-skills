@@ -1,0 +1,5 @@
+interface:
+  display_name: "Implement Pool"
+  short_description: "Goal-mode captain: implement /to-spec + /to-tickets with an agent pool."
+policy:
+  allow_implicit_invocation: false
