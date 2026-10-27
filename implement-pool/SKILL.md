@@ -1,6 +1,6 @@
 ---
 name: implement-pool
-description: "Implement the result of /to-spec and /to-tickets in code: goal-mode captain running a fixed agent pool until every ticket is merged."
+description: "Implement the result of /to-spec and /to-tickets in code: goal-mode captain running a fixed pool of agent team members until every ticket is merged."
 disable-model-invocation: true
 ---
 
@@ -10,25 +10,26 @@ The issue tracker should have been provided to you. If not, tell the user to run
 
 The goal is the entire spec implemented on a single **integration branch**, with every ticket resolved the way the issue tracker closes work.
 
-You are the **captain**. You run unattended: the user may be away for hours, so the run keeps moving on its own until every ticket is `merged` or `blocked`, and the user hears from you once, at the end.
+You are the **captain**. Once the user has approved the team plan (step 2), you run unattended: the user may be away for hours, so the run keeps moving on its own until every ticket is `merged` or `blocked`, and the user hears from you once, at the end.
 
 ## Vocabulary
 
-- **Task graph**: the tickets and their blocking relationships. A ticket is **ready** when every blocker is `merged` and it is not `running`.
-- **Pool**: at most **N** implementers running at once (default 8; use the user's number if given). A **slot** is one place in the pool.
-- **Run directory**: a directory outside the repo shared by the captain and all subagents. It holds `ledger.md`, `decisions.md`, and exploration notes.
+- **Agent team**: one persistent team with a roster and a shared task board (e.g. AgentTeams), led by the captain. The explorer, every implementer, and the merger are **members** of this team. Invoking this skill is a request for an agent team: never run them as one-off subagents.
+- **Task graph**: the tickets and their blocking relationships, mirrored on the team's task board as one task per ticket, with each ticket's blockers as its task's dependencies. A ticket is **ready** when every blocker is `merged` and it is not `running`.
+- **Pool**: at most **N** implementer members running at once (default 8; use the user's number if given). A **slot** is one place in the pool. The whole roster (N implementers, the merger, and the explorer if used) must fit the harness's team member limit.
+- **Run directory**: a directory outside the repo shared by the captain and all members. It holds `ledger.md`, `decisions.md`, and exploration notes.
 - **Ledger** (`ledger.md`): one row per ticket: status (`pending | running | merged | blocked`), branch, worktree, attempt count, start time, blocked reason.
 - **Decision log** (`decisions.md`): one entry per non-obvious decision: question, choice, reason, how to reverse.
 
-Communication to and from subagents should be sparse. Communicate primarily through **context pointers**: to the spec, tickets, run directory, and previous commits. Don't duplicate information already available via pointers.
+Communication to and from members should be sparse. Communicate primarily through **context pointers**: to the spec, tickets, run directory, and previous commits. Don't duplicate information already available via pointers.
 
 ## Captain rules
 
-1. **Goal mode.** Run as a persisted goal (e.g. `create_goal`) with the objective "Implement spec <pointer> on integration branch <name>; every ticket merged or blocked, code review fixed, worktrees cleaned up." If a goal for this spec exists, resume it. Mark it complete after step 8. Mark it blocked only when nothing is `pending` or `running` and the same concrete blocker persists across rounds.
+1. **Goal mode.** Run as a persisted goal (e.g. `create_goal`) with the objective "Implement spec <pointer> on integration branch <name>; every ticket merged or blocked, code review fixed, worktrees cleaned up." If a goal for this spec exists, resume it. Mark it complete after step 9. Mark it blocked only when nothing is `pending` or `running` and the same concrete blocker persists across rounds.
 
 2. **Captain owns dispatch.** You alone pick tickets, assign them, accept or reject reports, merge, and update the tracker and ledger. Implementers work only on the ticket they were given.
 
-3. **Ledger is the truth.** Write every status change to the ledger as it happens. On every start or resume, reconcile the ledger against reality (branches and worktrees that exist, live subagents, commits already on the integration branch) before dispatching, so each ticket runs exactly once.
+3. **Ledger is the truth.** Write every status change to the ledger as it happens. On every start or resume, reconcile the ledger against reality (branches and worktrees that exist, the team's members and tasks, commits already on the integration branch) before dispatching, so each ticket runs exactly once. If a team for this spec already exists, continue it; never create a second one.
 
 4. **Keep the pool full.** Whenever a slot frees up, fill it with a ready ticket, and fill every free slot. Ready tickets come from anywhere in the graph, including tickets just unblocked by the latest merge. When ready tickets outnumber free slots:
    - prefer tickets on the longest dependency chain, then those with the most dependents;
@@ -48,23 +49,27 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
    The one exception is an action that is irreversible or reaches outside the repo: production, deleting data, credentials, security or access changes, paid services. Leave it undone, mark only that ticket `blocked`, keep everything else running, and carry the question to the final report.
 
+8. **Agent team or stop.** If the harness has no agent team mechanism, or creating the team or adding any member fails for any reason (member limit, error, missing permission), stop immediately: dispatch nothing, end the current turn, and report the exact error and the options to the user. Never fall back to subagents or any other way of running agents, and never shrink N on your own; wait for the user's explicit choice. This overrides rule 7 and the "run unattended" default.
+
 ## Steps
 
 1. **Start.** Create or resume the goal. Read the spec and tickets, build the task graph, create the run directory, and create or reconcile the ledger. Done when every ticket has a ledger row and the graph has no unknown blockers.
 
-2. **Explore** (optional). Use an **exploration subagent** for exploration the tickets require (relevant codebase files or external docs). It saves markdown notes in the run directory, so implementers can focus on implementation.
+2. **Create the team.** Check that the whole roster fits the harness's team member limit, then create the agent team with it: N implementers, a merger, and an explorer if step 3 is needed. Put the task graph on the task board (one task per ticket, blockers as dependencies). Present the team plan to the user and end the turn; never approve it yourself. Start dispatching only after the user explicitly approves it, unless the user explicitly asked to start without review. If any of this fails, follow rule 8.
 
-3. **Integration branch.** Create it. If the issue tracker closes work through PRs, or the user asks for one, open a draft PR after the first merge (a branch with no commits ahead of main can't open one), marked as closing the spec and tickets.
+3. **Explore** (optional). Use an **explorer member** for exploration the tickets require (relevant codebase files or external docs). It saves markdown notes in the run directory, so implementers can focus on implementation.
 
-4. **Dispatch.** Fill free slots (rule 4). Each **implementer subagent** runs in the background, in its own worktree on its own branch based on the current integration branch tip. Its brief is a pointer to its ticket, the spec, the run directory, and [`IMPLEMENTER.md`](IMPLEMENTER.md).
+4. **Integration branch.** Create it. If the issue tracker closes work through PRs, or the user asks for one, open a draft PR after the first merge (a branch with no commits ahead of main can't open one), marked as closing the spec and tickets.
 
-5. **Accept and merge.** When an implementer reports, check it against its ticket. If it failed or is incomplete, handle it by rule 6. If it raised a blocker or a captain-level question, decide by rule 7, update the graph and ledger, and free the slot. Once accepted, merge it with a **merger subagent**, run the tests (rule 5), mark it `merged`, resolve it in the tracker, and remove its worktree. Return to step 4.
+5. **Dispatch.** Fill free slots (rule 4) by assigning tickets as tasks on the team's task board. Each **implementer member** works in its own worktree on its own branch based on the current integration branch tip. Its brief is a pointer to its ticket, the spec, the run directory, and [`IMPLEMENTER.md`](IMPLEMENTER.md).
 
-6. **Drain.** Repeat steps 4–5. Done when no ticket is `pending` or `running`; anything left is `blocked` with a recorded reason.
+6. **Accept and merge.** When an implementer reports, check it against its ticket. If it failed or is incomplete, handle it by rule 6. If it raised a blocker or a captain-level question, decide by rule 7, update the graph and ledger, and free the slot. Once accepted, merge it with the **merger member**, run the tests (rule 5), mark it `merged`, resolve it in the tracker, and remove its worktree. Return to step 5.
 
-7. **Review.** Call the Skill tool with `code-review` on the integration branch. Turn each finding into a small fix ticket and run them through the pool (steps 4–6). Done when every finding is fixed or recorded as `blocked`.
+7. **Drain.** Repeat steps 5–6. Done when no ticket is `pending` or `running`; anything left is `blocked` with a recorded reason.
 
-8. **Finish.** If a draft PR exists, mark it ready for review. Remove all remaining worktrees. Mark the goal complete and send one report:
+8. **Review.** Call the Skill tool with `code-review` on the integration branch. Turn each finding into a small fix ticket and run them through the pool (steps 5–7). Done when every finding is fixed or recorded as `blocked`.
+
+9. **Finish.** If a draft PR exists, mark it ready for review. Remove all remaining worktrees. Confirm every task on the board is finished and every member is idle, then close the agent team. Mark the goal complete and send one report:
    - tickets merged;
    - tickets blocked, with reasons;
    - a pointer to the decision log, with the decisions most worth the user's review;
