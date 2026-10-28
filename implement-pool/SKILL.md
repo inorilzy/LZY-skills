@@ -1,86 +1,89 @@
 ---
 name: implement-pool
-description: "Implement the result of /to-spec and /to-tickets in code: goal-mode captain running a fixed pool of agent team members until every ticket is merged."
+description: "将 /to-spec 和 /to-tickets 的产出实现为代码：由启用目标模式的队长调度固定规模的 agent teams成员池，直到每张工单都已合并。"
 disable-model-invocation: true
 ---
 
-You have been provided a spec. This spec should have tickets associated with it, describing how to implement the spec.
+你已获得一份规格文档（spec）。该规格应当关联一组工单（tickets），说明如何实现规格。
 
-The issue tracker should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.
+用户应当已经提供工单跟踪器（issue tracker）。如果没有，请告诉用户运行 `/setup-matt-pocock-skills`。
 
-The goal is the entire spec implemented on a single **integration branch**, with every ticket resolved the way the issue tracker closes work.
+目标是在同一条**集成分支**上实现整个规格，并按照工单跟踪器自身的关闭方式处理每张工单。
 
-You are the **captain**. Once the user has approved the team plan (step 2), you run unattended: the user may be away for hours, so the run keeps moving on its own until every ticket is `merged` or `blocked`, and the user hears from you once, at the end.
+你是**队长**。用户批准团队计划（步骤 2）后，你将无人值守地运行：用户可能离开数小时，因此应持续自行推进，直到每张工单都成为 `merged` 或 `blocked`，最后再统一向用户汇报一次。
 
-## Vocabulary
+## 术语
 
-- **Agent team**: one persistent team with a roster and a shared task board (e.g. AgentTeams), led by the captain. The explorer, every implementer, and the merger are **members** of this team. Invoking this skill is a request for an agent team: never run them as one-off subagents.
-- **Task graph**: the tickets and their blocking relationships, mirrored on the team's task board as one task per ticket, with each ticket's blockers as its task's dependencies. A ticket is **ready** when every blocker is `merged` and it is not `running`.
-- **Pool**: at most **N** implementer members running at once (default 8; use the user's number if given). A **slot** is one place in the pool. The whole roster (N implementers, the merger, and the explorer if used) must fit the harness's team member limit.
-- **Run directory**: a directory outside the repo shared by the captain and all members. It holds `ledger.md`, `decisions.md`, and exploration notes.
-- **Ledger** (`ledger.md`): one row per ticket: status (`pending | running | merged | blocked`), branch, worktree, attempt count, start time, blocked reason.
-- **Decision log** (`decisions.md`): one entry per non-obvious decision: question, choice, reason, how to reverse.
+- **agent teams**：由队长领导、拥有成员名单和共享任务看板的持久团队（例如 AgentTeams）。探索者、每位实现者和合并者都是这个团队的**成员**。调用本 skill 就是请求使用 agent teams：不得把这些角色作为一次性 subagent 运行。
+- **任务图**：工单及其阻塞关系，映射到团队任务看板上，每张工单对应一个任务，其阻塞工单对应任务依赖。当一张工单的所有阻塞项都是 `merged`，并且它自身不是 `running` 时，它才处于**就绪**状态。
+- **成员池**：同时运行的实现成员最多为 **N** 名（默认 8 名；用户指定数量时使用用户的数量）。一个**槽位**就是成员池中的一个位置。完整成员名单（N 名实现者、合并者，以及需要时的探索者）必须符合 harness 的团队成员数量上限。
+- **运行目录**：仓库外的一个目录，由队长和所有成员共享，保存 `ledger.md`、`decisions.md` 和探索笔记。
+- **台账**（`ledger.md`）：每张工单一行，记录状态（`pending | running | merged | blocked`）、分支、worktree、尝试次数、开始时间和阻塞原因。
+- **决策日志**（`decisions.md`）：每项非显而易见的决策一条，记录问题、选择、理由，以及如何撤销该选择。
 
-Communication to and from members should be sparse. Communicate primarily through **context pointers**: to the spec, tickets, run directory, and previous commits. Don't duplicate information already available via pointers.
+与成员之间的通信应当精简。主要通过**上下文指针**沟通：指向规格、工单、运行目录和之前的提交。不要重复指针所指内容中已经存在的信息。
 
-## Captain rules
+## 队长规则
 
-1. **Approval before goal mode.** Planning is a bounded turn, not an autonomous run. Create or resume the persisted execution goal only after explicit user approval of the team plan, a confirmed Web Approve & Run action, or an explicit request to run without review. Use the objective "Implement spec <pointer> on integration branch <name>; every ticket merged or blocked, code review fixed, worktrees cleaned up." An automatic continuation, model selection, or request to edit this skill is not execution approval. Before approval, leave an existing inactive goal inactive; if a legacy active goal keeps continuing, dispatch nothing, follow the harness's goal-control permissions, and do not repeat approval prompts each round. After approval, reuse the goal for this spec rather than duplicating it. Mark it complete after step 9. For an execution-wide blocker, follow the harness's minimum-round policy and record the concrete condition; pending tickets remain pending rather than being falsely closed to stop the goal.
+1. **先批准，再启用目标模式。**规划是一个有边界的回合，不是自主执行。只有展示计划后，用户在后续回合明确批准，或点击 Web 的 Approve & Run，才能创建或恢复持久化执行目标。首次请求中的“开始干”或“execute tickets”不能免除这道审批。使用目标：“在集成分支 <name> 上实现规格 <pointer>；每张工单已合并或已阻塞，代码审查问题已修复，worktree 已清理。”自动续轮、选择模型或要求修改本 skill，都不等于执行批准。审批前，让已有的非活动目标保持非活动；如果遗留的活动目标仍在自动续轮，不派发任何任务，遵守 harness 的目标控制权限，不要每轮重复催促审批。批准后，复用该规格已有的目标，不要重复创建。完成步骤 9 后才把目标标记为完成。出现阻塞整个执行过程的问题时，遵守 harness 的最少轮次策略并记录具体条件；待处理工单仍保持待处理，不能为了停止目标而虚假关闭工单。
 
-2. **Captain owns dispatch.** You alone pick tickets, assign them, accept or reject reports, merge, and update the tracker and ledger. Implementers work only on the ticket they were given.
+2. **队长负责调度。**只有你可以选择工单、分派工单、接受或拒绝报告、安排合并，以及更新跟踪器和台账。实现者只能处理分配给自己的工单。
 
-3. **Ledger is the truth.** Write every status change to the ledger as it happens. On every start or resume, reconcile the ledger against reality (branches and worktrees that exist, the team's members and tasks, commits already on the integration branch) before dispatching, so each ticket runs exactly once. If a team for this spec already exists, continue it; never create a second one.
+3. **台账是事实依据。**每次状态变化发生时立即写入台账。每次开始或恢复时，派发前都要将台账与实际情况核对，包括已有分支和 worktree、团队成员与任务，以及集成分支上已有的提交，确保每张工单只执行一次。如果该规格已经有团队，就继续使用；绝不另建第二个团队。
 
-4. **Keep the pool full.** Whenever a slot frees up, fill it with a ready ticket, and fill every free slot. Ready tickets come from anywhere in the graph, including tickets just unblocked by the latest merge. When ready tickets outnumber free slots:
-   - prefer tickets on the longest dependency chain, then those with the most dependents;
-   - run tickets that declare the same files or an exclusive resource (fixed port, local database, shared cache) one after another.
+4. **保持成员池充分利用。**只要有槽位空出，就用就绪工单填补，并填满所有空闲槽位。就绪工单可以来自任务图中的任何位置，包括刚被最近一次合并解除阻塞的工单。当就绪工单数量超过空闲槽位时：
+   - 优先处理位于最长依赖链上的工单，其次选择被更多工单依赖的工单；
+   - 声明涉及相同文件或独占资源（固定端口、本地数据库、共享缓存）的工单应依次执行。
 
-   Merges are yours, one at a time, and use no slot.
+   合并由你负责安排，每次只进行一个，不占用实现槽位。
 
-5. **Keep the integration branch green.** After each merge, run the test suite on the integration branch. On failure, pause filling slots (running implementers continue), fix or revert that merge, then resume dispatch.
+5. **保持集成分支测试通过。**每次合并后，在集成分支上运行测试套件。如果失败，暂停填充新槽位（已经运行的实现者继续工作），修复或撤销该次合并，再恢复派发。
 
-6. **Stalls and failures.** When a ticket runs far longer than its peers (e.g. over 1 hour), ask its implementer for status and choose: continue, split, or re-dispatch. When a ticket fails twice, mark it and everything downstream `blocked` with the reason, and keep running the rest.
+6. **停滞与失败。**当一张工单的运行时间远超其他工单（例如超过 1 小时），向实现者询问状态，并决定继续、拆分或重新派发。当一张工单失败两次，将它及其全部下游工单标记为 `blocked`，写明原因，并继续执行其他工单。
 
-7. **Decide ambiguity and keep going.** Resolve every uncertain question immediately, by this split:
-   - **Implementer decides** what is local to its ticket (naming, internal structure, edge cases, test shape).
-   - **Captain decides** what crosses tickets or interprets the spec: unclear or conflicting requirements, a hidden dependency, an oversized ticket. Choose the option most consistent with the spec, then with existing codebase conventions, then the easiest to reverse. Update the graph if needed (add the dependency, split the ticket) and continue.
+7. **消除歧义并继续推进。**遇到不确定的问题，立即按以下分工解决：
+   - **实现者决定**只影响自己工单的事项，例如命名、内部结构、边界情况和测试形式。
+   - **队长决定**跨工单事项或规格解释，例如不清楚或冲突的要求、隐藏依赖、过大的工单。优先选择最符合规格的方案，其次遵循现有代码库约定，再其次选择最容易撤销的方案。必要时更新任务图（添加依赖、拆分工单），然后继续。
 
-   Log every non-obvious decision in the decision log.
+   每项非显而易见的决策都要写入决策日志。
 
-   The one exception is an action that is irreversible or reaches outside the repo: production, deleting data, credentials, security or access changes, paid services. Leave it undone, mark only that ticket `blocked`, keep everything else running, and carry the question to the final report.
+   唯一的例外是不可逆或涉及仓库外部的操作：生产环境、删除数据、凭据、安全或访问权限变更、付费服务。不要执行这些操作，只将对应工单标记为 `blocked`，继续其他工作，并在最终报告中提出这个问题。
 
-8. **Agent team or stop.** For an explicit plan-argument validation error (such as a missing assignee or invalid dependency reference), inspect team state first. If nothing was created, correct the arguments and retry once; if a staged team exists, correct that existing plan instead of creating another team. Preserve roster size, model routes, scope, and approval requirements, and log the error and correction. If state is uncertain, correction fails, or the error concerns capacity, permissions, service availability, member creation, or an unknown cause, stop immediately: dispatch nothing, end the turn, and report the exact error and options. Do the same if no agent team mechanism exists. Never fall back to subagents or shrink N without the user's explicit choice. This overrides rule 7 and the "run unattended" default.
+8. **使用 agent teams，否则停止。**遇到明确的计划参数校验错误（例如缺少负责人或依赖引用无效），先检查团队状态。如果尚未创建任何团队，修正参数后重试一次；如果已有暂存团队，就修正现有计划，而不是另建团队。保持成员数量、模型路由、范围和审批要求不变，并记录错误及修正。如果状态不确定、修正失败，或错误涉及容量、权限、服务可用性、成员创建或未知原因，立即停止：不派发任何任务，结束当前回合，报告原始错误和可选方案。如果没有 agent teams机制，也采取相同处理。未经用户明确选择，绝不退回使用 subagent，也不缩小 N。此规则优先于规则 7 和默认的“无人值守运行”。
 
-## Planning and model selection
+## 规划与模型选择
 
-When editing this contract, check every case in [PLANNING-CHECKS.md](PLANNING-CHECKS.md).
+修改这组约定时，检查 [PLANNING-CHECKS.md](PLANNING-CHECKS.md) 中的每个场景。
 
-- **Stage first.** Inspect existing team state and reuse any staged plan. Use `approval="required"` for a new AgentTeams plan unless the user explicitly requested immediate execution. Staged roster rows and tasks must remain unspawned. The user chooses or changes member models in the plan UI before approving execution.
-- **Leave model choice to the user.** Unless the user supplied a route, omit `model`, `provider`, and `reasoning_effort` from staged members. These omissions may inherit runtime defaults; they do not guarantee an unset route. Do not query model catalogs, pin a placeholder model, change providers, or ask the user to choose models in chat merely to prepare a normal staged plan.
-- **Creation-time route rejection.** If the runtime rejects an inherited/default child route before saving the plan, inspect team state and report the exact error once, including whether a staged plan exists. Explain that runtime validation prevented reaching the model-selection UI; do not claim that omitting a route bypasses validation or that the captain explicitly selected the inherited model. Preserve any existing plan. Stop under rule 8, with no new execution goal, dispatch, or automatic alternate-model retry. Recovery requires a user-authorized route change or correction of the runtime/default-route configuration; this skill cannot repair the harness by itself.
-- **Approval hand-off.** Present the saved plan, tell the user they can select member models in the UI, then end the turn. After a later explicit approval, read the current plan so the user's model edits are preserved, activate goal mode under rule 1, and use the harness approval mechanism only if the Web action has not already started the team. For an explicit immediate-run request, activate goal mode after successful team creation and proceed without inventing an extra approval requirement.
+- **先暂存计划。**检查现有团队状态，复用已有暂存计划。新建 AgentTeams 计划一律使用 `approval="required"`。暂存的成员条目和任务必须保持未启动状态。用户在计划界面选择或修改成员模型，然后批准执行。
+- **成员名字。**为新成员起简短、唯一的名字（例如 `cedar`、`raven`），不要使用 `impl01` 这类角色加编号的标签；名字与角色、任务分开，续跑时保留已有名字。
+- **暂存前先查询。**创建成员前，通过 `list_subagent_models` 查询当前会话的提供方、候选模型，以及候选的精确路由和支持的推理强度。以当前会话的查询结果为准，不要假设设置界面已经改变当前会话；设置可能只影响新会话。模型出现在目录中仅供参考：仍须验证精确路由，并遵守创建时的校验。`list_subagent_models` 拒绝某条路由，表示查询阶段的一个候选不可用，不属于规则 8 所说的团队创建失败：排除该候选，检查其他允许的候选，不要重复尝试被拒绝的路由。报告出错的工具和参数，避免把查询错误描述成创建错误。
+- **选择可修改的初始模型。**保留用户指定的路由或界面中已有的选择。否则，在当前提供方下选择一个已验证可用的模型作为初始值，显式填写成员的 `model`，并在展示暂存计划时说明该选择。只有工具约定允许时才传入 `provider`；改用其他提供方需要用户授权。比较精确的提供方 ID：即使显示名称相似，`magpie` 与 `magpie-responses` 也是不同的提供方。如果只有另一个提供方拥有已验证的候选，就明确指出该 provider/model 组合并询问一次授权；获准后显式传入两者，不要继承队长的提供方。用户要求修改本 skill，并不等于授权某次实施运行切换提供方。推理强度只能设为已验证支持的值，或保留该模型的默认值。不要盲目继承队长模型，也不要硬编码前一次会话中的模型。这个初始选择不等于执行批准：保持计划暂存，让用户在批准前通过界面修改模型。如果存在允许使用且已验证的选择，无需预先在聊天中要求用户选模型。
+- **路由参数格式。**区分界面显示的完整路由与工具要求的模型 ID。例如，提供方为 `magpie` 时，完整路由 `magpie/group/worker-deepseek-v4-1-flash` 对应的模型 ID 是 `group/worker-deepseek-v4-1-flash`；在模型字段中再次包含提供方，可能导致前缀重复而使路由无效。通过查询确认精确的 provider/model 组合，不要对所有提供方的模型 ID 都盲目删除前缀。此例不是固定默认值。
+- **创建时路由被拒绝。**如果创建时仍拒绝已验证的路由，检查团队状态，保留已有暂存计划，并报告一次原始错误。区分显式选择的路由与运行时继承的路由。按规则 8 停止，不创建新的执行目标、不派发任务、不反复尝试替代模型。如果无法验证任何允许的路由，应在创建团队前报告这一具体限制。skill 不绕过运行时权限，也不静默切换提供方。
+- **审批交接。**展示已保存的计划，告诉用户可以在界面选择成员模型，然后结束当前回合。用户在后续回合明确批准后，读取当前计划以保留用户修改的模型，按规则 1 启用目标模式；只有 Web 操作尚未启动团队时，才调用 harness 的审批机制。
 
-## Steps
+## 步骤
 
-1. **Prepare.** Read the spec and tickets, build the task graph, create the run directory, and create or reconcile the ledger. Do not create or resume an execution goal during this planning step. Done when every ticket has a ledger row and the graph has no unknown blockers.
+1. **准备。**读取规格和工单，构建任务图，创建运行目录，并创建或核对台账。在这个规划步骤中，不创建或恢复执行目标。当每张工单都有台账记录，且任务图中没有未知阻塞项时，本步骤完成。
 
-2. **Stage the team.** Follow Planning and model selection above. Check that the whole roster fits the harness's team member limit (if no capacity query is exposed, staged creation is the check; do not invent a limit), then create the agent team with it: N implementers, a merger, and an explorer if step 3 is needed. Put the task graph on the task board (one task per ticket, blockers as dependencies). When using AgentTeams batch plan creation, explicitly set every task's `assignee` to a member name in the roster and validate all assignments before submitting. Preassignment does not authorize execution; the approval requirement still applies. For auto-dispatching teams, include a preparation task owned by the merger as a prerequisite for implementation; it performs step 4 after approval. Each implementer's first action is the worktree readiness check in step 5. Present the team plan to the user and end the turn; never approve it yourself. Start dispatching only after the user explicitly approves it, unless the user explicitly asked to start without review. If any of this fails, follow rule 8.
+2. **暂存团队。**遵循上面的“规划与模型选择”。检查完整成员名单是否符合 harness 的团队成员上限（如果没有容量查询接口，就以暂存创建的校验为准；不要凭空设定上限），然后按名单创建 agent teams：N 名实现者、1 名合并者，以及步骤 3 需要时的探索者。将任务图放到任务看板上（每张工单对应一个任务，阻塞项作为依赖）。使用 AgentTeams 批量计划创建时，必须显式将每个任务的 `assignee` 设为名单中的成员名，并在提交前验证所有分配。预分配不代表允许执行；仍须审批。对于会自动派发任务的团队，将合并者负责的准备任务设为实施的前置依赖；该任务在批准后执行步骤 4。每位实现者的首项动作是步骤 5 中的 worktree 就绪检查。向用户展示团队计划后结束当前回合；绝不自行批准。只有满足规则 1 定义的计划展示后审批，才能开始派发。如果其中任何环节失败，遵循规则 8。
 
-3. **Explore** (optional). Use an **explorer member** for exploration the tickets require (relevant codebase files or external docs). It saves markdown notes in the run directory, so implementers can focus on implementation.
+3. **探索**（可选）。使用团队中的**探索成员**完成工单所需的探索，例如相关代码库文件或外部文档。探索成员将 Markdown 笔记保存到运行目录，让实现者专注于实现。
 
-4. **Integration branch.** Create it. If the issue tracker closes work through PRs, or the user asks for one, open a draft PR after the first merge (a branch with no commits ahead of main can't open one), marked as closing the spec and tickets.
+4. **集成分支。**创建集成分支。如果工单跟踪器通过 PR 关闭工作，或用户要求创建 PR，则在第一次合并后创建草稿 PR（相对 main 没有新增提交的分支无法创建 PR），并标注该 PR 将关闭规格和工单。
 
-5. **Dispatch.** Fill free slots (rule 4) by assigning tickets as tasks on the team's task board. Before implementation starts, confirm the integration branch exists and the ticket's isolated worktree and branch are ready at its current tip. The captain may authorize the assigned implementer to create that worktree as its first action; preparation must finish before code edits or tests. Each **implementer member** works only in that worktree. Its brief is a pointer to its ticket, the spec, the run directory, and [`IMPLEMENTER.md`](IMPLEMENTER.md).
+5. **派发。**通过团队任务看板分配工单，填满空闲槽位（规则 4）。实现开始前，确认集成分支存在，且该工单的独立 worktree 和分支已经以集成分支当前最新提交为基准准备就绪。队长可以授权被分配的实现者把创建该 worktree 作为首项动作；必须先完成准备，才能编辑代码或运行测试。每位**实现成员**只能在自己的 worktree 中工作。给他的任务说明应包含指向工单、规格、运行目录和 [`IMPLEMENTER.md`](IMPLEMENTER.md) 的指针。
 
-6. **Accept and merge.** When an implementer reports, check it against its ticket. If it failed or is incomplete, handle it by rule 6. If it raised a blocker or a captain-level question, decide by rule 7, update the graph and ledger, and free the slot. An implementer's `ready-for-merge` report leaves the ticket task unfinished and its downstream dependencies blocked. Once accepted, transfer the task to the **merger member** through the harness's reassignment mechanism; merge and run the integration tests (rule 5). Only after a successful merge and passing tests, mark the ledger `merged`, resolve the tracker, and complete the ticket task to release downstream dependencies. Remove its worktree and return to step 5.
+6. **验收并合并。**实现者报告后，对照工单检查。如果失败或未完成，按规则 6 处理。如果提出阻塞项或队长级别的问题，按规则 7 决定，更新任务图和台账，并释放槽位。实现者提交 `ready-for-merge` 报告时，工单任务仍保持未完成，下游依赖仍被阻塞。接受实现后，通过 harness 的任务转派机制将任务交给**合并成员**；执行合并并运行集成测试（规则 5）。只有合并成功且测试通过后，才能将台账标记为 `merged`、关闭跟踪器中的工单，并完成任务以解除下游依赖。移除该工单的 worktree，返回步骤 5。
 
-7. **Drain.** Repeat steps 5–6. Done when no ticket is `pending` or `running`; anything left is `blocked` with a recorded reason.
+7. **清空待执行工作。**重复步骤 5～6。当没有工单处于 `pending` 或 `running` 时完成；其余工单必须是 `blocked`，并记录原因。
 
-8. **Review.** Call the Skill tool with `code-review` on the integration branch. Turn each finding into a small fix ticket and run them through the pool (steps 5–7). Done when every finding is fixed or recorded as `blocked`.
+8. **审查。**调用 Skill 工具，使用 `code-review` 审查集成分支。将每个发现转为一张小型修复工单，通过成员池执行（步骤 5～7）。每个发现均已修复或记录为 `blocked` 时，本步骤完成。
 
-9. **Finish.** If a draft PR exists, mark it ready for review. Remove all remaining worktrees. Confirm every task on the board is finished and every member is idle, then close the agent team. Mark the goal complete and send one report:
-   - tickets merged;
-   - tickets blocked, with reasons;
-   - a pointer to the decision log, with the decisions most worth the user's review;
-   - questions only the user can answer;
-   - the integration branch or PR.
+9. **收尾。**如果存在草稿 PR，将其标记为可供审查。移除所有剩余 worktree。确认看板上的每个任务都已结束、每位成员都处于空闲状态，然后关闭 agent teams。将目标标记为完成，并发送一份报告：
+   - 已合并的工单；
+   - 已阻塞的工单及原因；
+   - 决策日志的指针，以及最值得用户检查的决策；
+   - 只有用户才能回答的问题；
+   - 集成分支或 PR。
