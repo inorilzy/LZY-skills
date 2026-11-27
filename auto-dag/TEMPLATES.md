@@ -1,6 +1,6 @@
-# Auto-DAG 模板与质检参考
+# Auto-DAG 模板参考
 
-本文件供 `auto-dag` 的 `workflow` 各阶段直接引用。
+本文件供 `auto-dag` 队长写 Spec 与 Tickets 时引用。
 
 ---
 
@@ -84,18 +84,6 @@
 - 验收条件必须包含：
   - [ ] 在当前宿主 OS 启动或刷新真实运行态并走通核心交互流（Web 检查控制台无报错；桌面端用 `agent-desktop` 校验界面元素）
   - [ ] 将关键画面截图保存至**主仓库根目录**下的 `<mainRepo>/.scratch/<slug>/acceptance/`（遵循协调器注入的非提交产物目录，勿留在临时 worktree 中），并用 `read_image` 逐张核对布局、对齐、文案与数据展示无异常
-  - [ ] 验收报告写入仓库内 `docs/acceptance/<slug>.md`（供提交）并同步一份至主仓库 `<mainRepo>/.scratch/<slug>/acceptance/report.md`，每条验收项附实际命令/操作、结果（`VERIFIED` / `PARTIAL` / `MISSING` / `NOT RUN`）与截图绝对路径
+  - [ ] 验收报告写入 `<mainRepo>/.scratch/<slug>/acceptance/report.md`，每条验收项附实际命令/操作、结果（`VERIFIED` / `PARTIAL` / `MISSING` / `NOT RUN`）与截图绝对路径
   - [ ] （若有多平台目标）完成平台无关单测与跨平台静态排查，未在场 OS 标 `NOT RUN (deferred: <OS>)` 并附后续验收清单
   - [ ] 清理本次验收启动的临时进程，并确认工单 worktree 中无残留未追踪/被忽略的临时截图文件
-
----
-
-## 3. Critic 自检清单（阶段 C）
-
-Critic 子 Agent 输出 JSON：`{ "pass": boolean, "issues": string[] }`，逐项核查：
-
-1. **需求覆盖与边界**：原始需求讨论中的每条关键诉求与决策均已落入 `spec.md` 并映射到至少一张 Ticket 的 `- [ ]` 验收项；未引入 `Out of Scope` 内容。
-2. **DAG 合法性与并行度**：依赖图无环、无指向不存在编号的 `Blocked by`、无虚假串联（相互独立的功能切片可以并行）。
-3. **并发防冲突**：多张并行票共享新契约时是否已有前置 `architect` 票；多张并行票共改同一注册/索引文件时是否已抽成独立 `scribe` 收口票。
-4. **单窗口粒度**：每张票范围适中、目标明确，可在单个上下文窗口内端到端实现并测试。
-5. **`dag_import` 兼容性与验收封尾**：所有文件名满足 `NN-<slug>.md`、`Blocked by` 使用数字编号或 `None`、`Status: ready-for-agent` 齐全；涉及 UI/运行态时末尾包含当前 OS 优先的 `verifier` 票。
